@@ -5,7 +5,7 @@ import Barcode from 'react-barcode';
 export default function DigitalIDCard({ student, onSendEmail, onStartOver }) {
   const handleSendEmail = async () => {
     try {
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5002';
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5002';
       const response = await fetch(`${apiUrl}/send-id-card`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
