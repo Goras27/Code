@@ -1,0 +1,57 @@
+{
+    "formatVersion": 1,
+    "passTypeIdentifier": "pass.edu.tnstate.studentid",
+    "teamIdentifier": "YOUR_TEAM_ID",
+    "organizationName": "Tennessee State University",
+    "description": "TSU Student ID",
+    "logoText": "Tennessee State University",
+    "foregroundColor": "rgb(255, 255, 255)",
+    "backgroundColor": "rgb(0, 51, 160)",
+    "labelColor": "rgb(255, 255, 255)",
+    "serialNumber": "{{studentId}}",
+    "barcodeAltText": "{{studentId}}",
+    "generic": {
+        "headerFields": [],
+        "primaryFields": [
+            {
+                "key": "name",
+                "label": "NAME",
+                "value": "{{name}}"
+            }
+        ],
+        "secondaryFields": [
+            {
+                "key": "studentId",
+                "label": "T NUMBER",
+                "value": "{{studentId}}"
+            },
+            {
+                "key": "major",
+                "label": "MAJOR",
+                "value": "{{major}}"
+            }
+        ],
+        "auxiliaryFields": [
+            {
+                "key": "validUntil",
+                "label": "VALID UNTIL",
+                "value": "December 1, 2026"
+            }
+        ],
+        "backFields": [
+            {
+                "key": "terms",
+                "label": "Terms and Conditions",
+                "value": "This is an official Tennessee State University student identification card. This ID card is non-transferable and is the property of Tennessee State University. If found, please return to TSU."
+            }
+        ]
+    },
+    "barcodes": [
+        {
+            "message": "{{studentId}}",
+            "format": "PKBarcodeFormatCode128",
+            "messageEncoding": "iso-8859-1",
+            "altText": "{{studentId}}"
+        }
+    ]
+} 

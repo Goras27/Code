@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: tsu-virtual-id-backend
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: SENDGRID_FROM_EMAIL
+        sync: false
+      - key: PASS2U_API_KEY
+        sync: false
+      - key: PASS2U_MODEL_ID
+        sync: false
+      - key: PORT
+        value: 5002 
