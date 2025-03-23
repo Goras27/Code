@@ -7,7 +7,7 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
-const port = process.env.PORT || 5002;
+const port = process.env.PORT || 5003;
 
 // Configure SendGrid
 if (!process.env.SENDGRID_API_KEY) {
@@ -23,6 +23,11 @@ if (!process.env.SENDGRID_FROM_EMAIL) {
 console.log("SendGrid Configuration:");
 console.log("API Key:", process.env.SENDGRID_API_KEY ? "Set" : "Not Set");
 console.log("From Email:", process.env.SENDGRID_FROM_EMAIL);
+
+if (!process.env.SENDGRID_API_KEY.startsWith('SG.')) {
+    console.error("Invalid SendGrid API key format. API key must start with 'SG.'");
+    process.exit(1);
+}
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 

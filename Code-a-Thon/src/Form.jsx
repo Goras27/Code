@@ -34,24 +34,28 @@ const Form = () => {
             if (!showOtpInput) {
                 const foundStudent = findStudent(formData.email, formData.campusId);
                 if (foundStudent) {
-                    const apiUrl = import.meta.env.VITE_API_URL || 'https://tsu-virtual-id-backend.onrender.com';
-                    const response = await fetch(`${apiUrl}/send-otp`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email: formData.email })
-                    });
+                    const apiUrl = 'http://localhost:5003';
+                    try {
+                        const response = await fetch(`${apiUrl}/send-otp`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: formData.email })
+                        });
 
-                    const data = await response.json().catch(err => {
-                        console.error('Error parsing JSON:', err);
-                        throw new Error('Server error. Please try again.');
-                    });
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.error || 'Failed to send OTP');
+                        }
 
-                    if (!response.ok) {
-                        throw new Error(data.error || 'Failed to send OTP');
+                        const data = await response.json();
+                        console.log('OTP Response:', data);
+
+                        setShowOtpInput(true);
+                        setStudent(foundStudent);
+                    } catch (err) {
+                        console.error('Error sending OTP:', err);
+                        throw new Error(err.message || 'Failed to send OTP');
                     }
-
-                    setShowOtpInput(true);
-                    setStudent(foundStudent);
                 } else {
                     setError('Student not found. Please check your email and campus ID.');
                 }
@@ -60,7 +64,7 @@ const Form = () => {
                     throw new Error('Please enter a valid 6-digit OTP');
                 }
 
-                const apiUrl = import.meta.env.VITE_API_URL || 'https://tsu-virtual-id-backend.onrender.com';
+                const apiUrl = 'http://localhost:5003';
                 const response = await fetch(`${apiUrl}/verify-otp`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -70,10 +74,8 @@ const Form = () => {
                     })
                 });
 
-                const data = await response.json().catch(err => {
-                    console.error('Error parsing JSON:', err);
-                    throw new Error('Server error. Please try again.');
-                });
+                const data = await response.json();
+                console.log('Verify Response:', data);
 
                 if (!response.ok) {
                     throw new Error(data.error || 'Invalid OTP');
@@ -113,7 +115,7 @@ const Form = () => {
     const handleSendEmail = async () => {
         setIsLoading(true);
         try {
-            const apiUrl = import.meta.env.VITE_API_URL || 'https://tsu-virtual-id-backend.onrender.com';
+            const apiUrl = 'http://localhost:5003';
             const response = await fetch(`${apiUrl}/send-id-card`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
