@@ -25,6 +25,68 @@ app.use(express.json());
 const PASS2U_API_KEY = process.env.PASS2U_API_KEY;
 const PASS2U_BASE_URL = 'https://api.pass2u.net/v2';
 
+// In-memory storage for OTPs
+const otpStore = new Map();
+
+// Function to generate OTP
+function generateOTP() {
+    return Math.floor(100000 + Math.random() * 900000);
+}
+
+// Send OTP endpoint
+app.post('/send-otp', async (req, res) => {
+    try {
+        const { email } = req.body;
+        const otp = generateOTP();
+        const expiryTime = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+        // Store OTP with expiry time
+        otpStore.set(email, { otp, expiryTime });
+
+        // Send OTP email
+        await sgMail.send({
+            to: email,
+            from: process.env.SENDGRID_FROM_EMAIL,
+            subject: 'Your TSU Virtual ID OTP',
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <h2 style="color: #003DA5;">Your TSU Virtual ID OTP</h2>
+                    <p>Your OTP is: <strong style="font-size: 24px;">${otp}</strong></p>
+                    <p>This code will expire in 5 minutes.</p>
+                    <p style="color: #666;">If you did not request this OTP, please ignore this email.</p>
+                </div>
+            `
+        });
+
+        res.json({ message: 'OTP sent successfully' });
+    } catch (error) {
+        console.error('Error sending OTP:', error);
+        res.status(500).json({ error: 'Failed to send OTP' });
+    }
+});
+
+// Verify OTP endpoint
+app.post('/verify-otp', (req, res) => {
+    const { email, otp } = req.body;
+    const storedData = otpStore.get(email);
+
+    if (!storedData) {
+        return res.status(400).json({ error: 'No OTP found' });
+    }
+
+    if (Date.now() > storedData.expiryTime) {
+        otpStore.delete(email);
+        return res.status(400).json({ error: 'OTP expired' });
+    }
+
+    if (storedData.otp === parseInt(otp)) {
+        otpStore.delete(email);
+        res.json({ message: 'OTP verified successfully' });
+    } else {
+        res.status(400).json({ error: 'Invalid OTP' });
+    }
+});
+
 // Function to upload image to Pass2U
 async function uploadImageToPass2U(imageUrl) {
     try {
