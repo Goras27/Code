@@ -179,21 +179,9 @@ async function createPass2UPass(studentData, idCardImageUrl) {
         console.log("Pass2U pass created successfully, response:", response.data);
         const passId = response.data.passId;
         
-        // Get the direct download URL for the pass
-        const downloadUrl = `${PASS2U_BASE_URL}/passes/${passId}/download`;
-        const passResponse = await axios.get(downloadUrl, {
-            headers: {
-                'x-api-key': PASS2U_API_KEY,
-                'Accept': 'application/vnd.apple.pkpass'
-            },
-            responseType: 'arraybuffer'
-        });
-
-        // Store the pass data temporarily (you might want to use a proper storage solution in production)
-        passStore.set(passId, passResponse.data);
-        
+        // For iOS devices, we'll use the direct Pass2U URL
         return {
-            appleWalletUrl: `/download-pass/${passId}`,
+            appleWalletUrl: `https://pass2u.net/v1/p2u/${passId}.pkpass`,
             googleWalletUrl: `https://www.pass2u.net/d/${passId}`,
             passId: passId
         };
