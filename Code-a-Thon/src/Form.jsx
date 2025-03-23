@@ -34,7 +34,7 @@ const Form = () => {
             if (!showOtpInput) {
                 const foundStudent = findStudent(formData.email, formData.campusId);
                 if (foundStudent) {
-                    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5002';
+                    const apiUrl = import.meta.env.VITE_API_URL || 'https://tsu-virtual-id-backend.onrender.com';
                     const response = await fetch(`${apiUrl}/send-otp`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -56,7 +56,7 @@ const Form = () => {
                     throw new Error('Please enter a valid 6-digit OTP');
                 }
 
-                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5002';
+                const apiUrl = import.meta.env.VITE_API_URL || 'https://tsu-virtual-id-backend.onrender.com';
                 const response = await fetch(`${apiUrl}/verify-otp`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -106,7 +106,7 @@ const Form = () => {
     const handleSendEmail = async () => {
         setIsLoading(true);
         try {
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5002';
+            const apiUrl = import.meta.env.VITE_API_URL || 'https://tsu-virtual-id-backend.onrender.com';
             const response = await fetch(`${apiUrl}/send-id-card`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

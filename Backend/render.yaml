@@ -14,4 +14,6 @@ services:
       - key: PASS2U_MODEL_ID
         sync: false
       - key: PORT
-        value: 5002 
+        value: 5002
+      - key: CORS_ORIGIN
+        sync: false

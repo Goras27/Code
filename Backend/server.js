@@ -10,7 +10,7 @@ const app = express();
 
 // CORS configuration
 const corsOptions = {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: process.env.CORS_ORIGIN || 'https://tsu-virtual-id-frontend.onrender.com',
     methods: ['GET', 'POST'],
     credentials: true,
     optionsSuccessStatus: 204
@@ -21,6 +21,9 @@ app.use(express.json());
 
 // In-memory storage for OTPs
 const otpStore = new Map();
+
+// In-memory store for pass data (replace with proper storage in production)
+const passStore = new Map();
 
 // Check if required API keys are available
 if (!process.env.SENDGRID_API_KEY) {
@@ -127,7 +130,7 @@ async function createPass2UPass(studentData, idCardImageUrl) {
                 },
                 {
                     key: "classification",
-                    value: studentData.classification,
+                    value: studentData.classification || "Student",
                     label: "CLASSIFICATION"
                 },
                 {
@@ -162,7 +165,7 @@ async function createPass2UPass(studentData, idCardImageUrl) {
             },
 
             // Additional settings
-            sharingProhibited: true,
+            sharingProhibited: false,
             voided: false,
             expirationDate: "2026-12-01T23:59:59Z"
         }, {
@@ -174,9 +177,25 @@ async function createPass2UPass(studentData, idCardImageUrl) {
         });
 
         console.log("Pass2U pass created successfully, response:", response.data);
+        const passId = response.data.passId;
+        
+        // Get the direct download URL for the pass
+        const downloadUrl = `${PASS2U_BASE_URL}/passes/${passId}/download`;
+        const passResponse = await axios.get(downloadUrl, {
+            headers: {
+                'x-api-key': PASS2U_API_KEY,
+                'Accept': 'application/vnd.apple.pkpass'
+            },
+            responseType: 'arraybuffer'
+        });
+
+        // Store the pass data temporarily (you might want to use a proper storage solution in production)
+        passStore.set(passId, passResponse.data);
+        
         return {
-            appleWalletUrl: `https://www.pass2u.net/d/${response.data.passId}`,
-            googleWalletUrl: `https://www.pass2u.net/d/${response.data.passId}`
+            appleWalletUrl: `/download-pass/${passId}`,
+            googleWalletUrl: `https://www.pass2u.net/d/${passId}`,
+            passId: passId
         };
     } catch (error) {
         console.error('Error creating Pass2U pass:', {
@@ -186,10 +205,10 @@ async function createPass2UPass(studentData, idCardImageUrl) {
             stack: error.stack
         });
         
-        // Return null URLs if Pass2U integration fails
         return {
             appleWalletUrl: null,
-            googleWalletUrl: null
+            googleWalletUrl: null,
+            passId: null
         };
     }
 }
@@ -325,7 +344,8 @@ app.post("/send-id-card", async (req, res) => {
                         message: "ID card sent successfully",
                         passData: {
                             appleWalletUrl: passData.appleWalletUrl,
-                            googleWalletUrl: passData.googleWalletUrl
+                            googleWalletUrl: passData.googleWalletUrl,
+                            passId: passData.passId
                         }
                     });
                 } catch (emailError) {
@@ -361,6 +381,42 @@ app.post("/send-id-card", async (req, res) => {
             error: "Failed to send ID card", 
             details: error.message
         });
+    }
+});
+
+// Direct download endpoint for .pkpass file
+app.get("/download-pass/:passId", async (req, res) => {
+    try {
+        const { passId } = req.params;
+        
+        // Check if we have the pass data stored
+        const passData = passStore.get(passId);
+        if (!passData) {
+            // If not stored, fetch it from Pass2U
+            const downloadUrl = `${PASS2U_BASE_URL}/passes/${passId}/download`;
+            const response = await axios.get(downloadUrl, {
+                headers: {
+                    'x-api-key': PASS2U_API_KEY,
+                    'Accept': 'application/vnd.apple.pkpass'
+                },
+                responseType: 'arraybuffer'
+            });
+            
+            res.set('Content-Type', 'application/vnd.apple.pkpass');
+            res.set('Content-Disposition', 'attachment; filename=TSU-Student-ID.pkpass');
+            return res.send(response.data);
+        }
+        
+        // Send the stored pass data
+        res.set('Content-Type', 'application/vnd.apple.pkpass');
+        res.set('Content-Disposition', 'attachment; filename=TSU-Student-ID.pkpass');
+        res.send(passData);
+        
+        // Clean up stored data
+        passStore.delete(passId);
+    } catch (error) {
+        console.error('Error downloading pass:', error);
+        res.status(500).json({ error: 'Failed to download pass file' });
     }
 });
 
