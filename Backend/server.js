@@ -10,7 +10,47 @@ const app = express();
 const port = process.env.PORT || 5002;
 
 // Configure SendGrid
+if (!process.env.SENDGRID_API_KEY) {
+    console.error("SENDGRID_API_KEY is not set");
+    process.exit(1);
+}
+
+if (!process.env.SENDGRID_FROM_EMAIL) {
+    console.error("SENDGRID_FROM_EMAIL is not set");
+    process.exit(1);
+}
+
+console.log("SendGrid Configuration:");
+console.log("API Key:", process.env.SENDGRID_API_KEY ? "Set" : "Not Set");
+console.log("From Email:", process.env.SENDGRID_FROM_EMAIL);
+
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+// Test SendGrid configuration
+app.get('/test-email', async (req, res) => {
+    try {
+        const msg = {
+            to: 'test@example.com',
+            from: process.env.SENDGRID_FROM_EMAIL,
+            subject: 'Test Email',
+            text: 'This is a test email'
+        };
+        console.log("Sending test email with config:", msg);
+        const response = await sgMail.send(msg);
+        console.log("Test email sent successfully:", response);
+        res.json({ message: 'Test email configuration is working' });
+    } catch (error) {
+        console.error('SendGrid Error:', error);
+        if (error.response) {
+            console.error('SendGrid Error Response:', error.response.body);
+        }
+        res.status(500).json({ 
+            error: 'Email configuration error', 
+            details: error.message,
+            response: error.response ? error.response.body : null
+        });
+    }
+});
 
 // CORS configuration
 app.use(cors());  // Allow all origins for testing
@@ -46,10 +86,14 @@ app.post('/send-otp', async (req, res) => {
         console.log('Generated OTP for', email, ':', otp);
 
         // Send OTP email
-        await sgMail.send({
+        const msg = {
             to: email,
-            from: process.env.SENDGRID_FROM_EMAIL,
+            from: {
+                email: process.env.SENDGRID_FROM_EMAIL,
+                name: "TSU Virtual ID"
+            },
             subject: 'Your TSU Virtual ID OTP',
+            text: `Your OTP is: ${otp}. This code will expire in 5 minutes.`,
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                     <h2 style="color: #003DA5;">Your TSU Virtual ID OTP</h2>
@@ -58,13 +102,29 @@ app.post('/send-otp', async (req, res) => {
                     <p style="color: #666;">If you did not request this OTP, please ignore this email.</p>
                 </div>
             `
+        };
+
+        console.log('Attempting to send OTP email with config:', {
+            to: msg.to,
+            from: msg.from,
+            subject: msg.subject
         });
-        console.log('OTP email sent to', email);
+
+        const response = await sgMail.send(msg);
+        console.log('SendGrid Response:', response);
+        console.log('OTP email sent successfully to', email);
 
         res.json({ message: 'OTP sent successfully' });
     } catch (error) {
         console.error('Error in /send-otp:', error);
-        res.status(500).json({ error: 'Failed to send OTP' });
+        if (error.response) {
+            console.error('SendGrid Error Response:', error.response.body);
+        }
+        res.status(500).json({ 
+            error: 'Failed to send OTP',
+            details: error.message,
+            response: error.response ? error.response.body : null
+        });
     }
 });
 
@@ -209,6 +269,7 @@ app.post('/send-id-card', async (req, res) => {
         const { email, studentData } = req.body;
         
         if (!email || !studentData) {
+            console.error('Missing required fields:', { email: !!email, studentData: !!studentData });
             return res.status(400).json({ error: 'Email and student data are required' });
         }
 
@@ -220,39 +281,38 @@ app.post('/send-id-card', async (req, res) => {
         const templatePath = path.join(__dirname, 'templates', 'email-template.html');
         let emailHtml = await fs.readFile(templatePath, 'utf8');
 
+        // Generate barcode URL
+        const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(studentData.studentId)}&code=Code128&multiplebarcodes=false&translate-esc=false&unit=mm&dpi=96&imagetype=Gif&rotation=0&color=%23000000&bgcolor=%23ffffff&codepage=&width=200&height=50`;
+
         // Replace placeholders in template
         emailHtml = emailHtml.replace(/{{name}}/g, studentData.name)
                             .replace(/{{studentId}}/g, studentData.studentId)
                             .replace(/{{major}}/g, studentData.major)
                             .replace(/{{imageUrl}}/g, studentData.imageUrl)
+                            .replace(/{{barcodeUrl}}/g, barcodeUrl)
                             .replace(/{{appleWalletUrl}}/g, passData.appleWalletUrl)
                             .replace(/{{googleWalletUrl}}/g, passData.googleWalletUrl);
 
-        // Get the .pkpass file
-        console.log("Downloading .pkpass file...");
-        const passResponse = await axios.get(passData.appleWalletUrl, {
-            responseType: 'arraybuffer'
-        });
-        console.log(".pkpass file downloaded");
-
-        // Send email with pass file attached
-        console.log("Sending email with pass attachment...");
-        await sgMail.send({
+        console.log("Sending email to:", email);
+        console.log("From email:", process.env.SENDGRID_FROM_EMAIL);
+        
+        // Send email
+        const msg = {
             to: email,
             from: process.env.SENDGRID_FROM_EMAIL,
             subject: 'Your TSU Virtual ID Card',
             html: emailHtml,
-            attachments: [
-                {
-                    content: Buffer.from(passResponse.data).toString('base64'),
-                    filename: 'TSU-Student-ID.pkpass',
-                    type: 'application/vnd.apple.pkpass',
-                    disposition: 'attachment',
-                    contentId: 'passFile'
-                }
-            ]
-        });
-        console.log("Email sent successfully");
+            attachments: [{
+                content: Buffer.from(await (await axios.get(passData.appleWalletUrl, { responseType: 'arraybuffer' })).data).toString('base64'),
+                filename: 'TSU-Student-ID.pkpass',
+                type: 'application/vnd.apple.pkpass',
+                disposition: 'attachment'
+            }]
+        };
+
+        const response = await sgMail.send(msg);
+        console.log("Email sent successfully:", response);
+        console.log("Email sent successfully to:", email);
 
         res.json({ 
             message: 'ID card sent successfully',
@@ -260,6 +320,9 @@ app.post('/send-id-card', async (req, res) => {
         });
     } catch (error) {
         console.error('Error in /send-id-card:', error);
+        if (error.response) {
+            console.error('Error response:', error.response.body);
+        }
         res.status(500).json({ 
             error: 'Failed to send ID card',
             details: error.message
