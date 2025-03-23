@@ -41,8 +41,12 @@ const Form = () => {
                         body: JSON.stringify({ email: formData.email })
                     });
 
+                    const data = await response.json().catch(err => {
+                        console.error('Error parsing JSON:', err);
+                        throw new Error('Server error. Please try again.');
+                    });
+
                     if (!response.ok) {
-                        const data = await response.json();
                         throw new Error(data.error || 'Failed to send OTP');
                     }
 
@@ -66,7 +70,10 @@ const Form = () => {
                     })
                 });
 
-                const data = await response.json();
+                const data = await response.json().catch(err => {
+                    console.error('Error parsing JSON:', err);
+                    throw new Error('Server error. Please try again.');
+                });
 
                 if (!response.ok) {
                     throw new Error(data.error || 'Invalid OTP');
