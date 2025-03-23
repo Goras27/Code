@@ -1,97 +1,58 @@
-const express = require("express");
-const cors = require("cors");
-const sgMail = require("@sendgrid/mail");
+const express = require('express');
+const cors = require('cors');
+const sgMail = require('@sendgrid/mail');
+const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
-const axios = require('axios');
-require("dotenv").config();
+require('dotenv').config();
 
 const app = express();
+const port = process.env.PORT || 5002;
 
-// CORS configuration
-const corsOptions = {
-    origin: process.env.CORS_ORIGIN || 'https://tsu-virtual-id-frontend.onrender.com',
-    methods: ['GET', 'POST'],
-    credentials: true,
-    optionsSuccessStatus: 204
-};
-
-app.use(cors(corsOptions));
-app.use(express.json());
-
-// In-memory storage for OTPs
-const otpStore = new Map();
-
-// In-memory store for pass data (replace with proper storage in production)
-const passStore = new Map();
-
-// Check if required API keys are available
-if (!process.env.SENDGRID_API_KEY) {
-    console.error("SENDGRID_API_KEY is not set");
-    process.exit(1);
-}
-
-if (!process.env.SENDGRID_FROM_EMAIL) {
-    console.error("SENDGRID_FROM_EMAIL is not set");
-    process.exit(1);
-}
-
-if (!process.env.PASS2U_API_KEY) {
-    console.error("PASS2U_API_KEY is not set");
-    process.exit(1);
-}
-
-if (!process.env.PASS2U_MODEL_ID) {
-    console.error("PASS2U_MODEL_ID is not set");
-    process.exit(1);
-}
-
-// Initialize SendGrid with API key
+// Configure SendGrid
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-// Pass2U configuration
+// CORS configuration
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  methods: ['GET', 'POST'],
+  credentials: true
+}));
+
+app.use(express.json());
+
+// Pass2U API configuration
 const PASS2U_API_KEY = process.env.PASS2U_API_KEY;
 const PASS2U_BASE_URL = 'https://api.pass2u.net/v2';
 
-// Function to upload image to Pass2U and get hex
+// Function to upload image to Pass2U
 async function uploadImageToPass2U(imageUrl) {
     try {
-        console.log("Downloading image from URL:", imageUrl);
-        // Download the image first
-        const imageResponse = await axios.get(imageUrl, { 
-            responseType: 'arraybuffer',
-            timeout: 5000 // 5 second timeout
-        });
-        console.log("Image downloaded successfully");
-
+        // Download the image
+        const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
         const imageBuffer = Buffer.from(imageResponse.data);
-        console.log("Image buffer created, size:", imageBuffer.length);
-
+        
+        // Convert to base64
+        const base64Image = imageBuffer.toString('base64');
+        
         // Upload to Pass2U
-        console.log("Uploading image to Pass2U...");
-        const response = await axios.post(`${PASS2U_BASE_URL}/images`, imageBuffer, {
+        const response = await axios.post(`${PASS2U_BASE_URL}/images`, {
+            image: base64Image
+        }, {
             headers: {
                 'x-api-key': PASS2U_API_KEY,
-                'Content-Type': 'image/png',
-                'Accept': 'application/json'
-            },
-            timeout: 10000 // 10 second timeout
+                'Content-Type': 'application/json'
+            }
         });
-        console.log("Image uploaded to Pass2U successfully");
-
+        
         return response.data.hex;
     } catch (error) {
-        console.error('Error uploading image to Pass2U:', {
-            message: error.message,
-            response: error.response?.data,
-            status: error.response?.status,
-            stack: error.stack
-        });
+        console.error('Error uploading image:', error);
         throw error;
     }
 }
 
-// Function to create Pass2U pass using our existing ID card design
+// Function to create Pass2U pass
 async function createPass2UPass(studentData, idCardImageUrl) {
     try {
         // First upload the image and get the hex
@@ -100,18 +61,14 @@ async function createPass2UPass(studentData, idCardImageUrl) {
         console.log("Image uploaded successfully, hex:", imageHex);
 
         console.log("Creating pass with model ID:", process.env.PASS2U_MODEL_ID);
-        // Create a simple pass that uses our existing ID card design
-        const response = await axios.post(`${PASS2U_BASE_URL}/models/${process.env.PASS2U_MODEL_ID}/passes`, {
-            // Basic pass information
+        
+        // Create the pass
+        const passResponse = await axios.post(`${PASS2U_BASE_URL}/models/${process.env.PASS2U_MODEL_ID}/passes`, {
             description: "TSU Student ID Card",
             organizationName: "Tennessee State University",
-            
-            // Visual appearance
-            backgroundColor: "rgb(0, 51, 160)", // TSU Blue
-            foregroundColor: "rgb(255, 255, 255)", // White
-            labelColor: "rgb(255, 255, 255)", // White
-            
-            // Pass fields
+            backgroundColor: "rgb(0, 51, 160)",
+            foregroundColor: "rgb(255, 255, 255)",
+            labelColor: "rgb(255, 255, 255)",
             fields: [
                 {
                     key: "name",
@@ -139,8 +96,6 @@ async function createPass2UPass(studentData, idCardImageUrl) {
                     label: "VALID UNTIL"
                 }
             ],
-
-            // Pass images
             images: [
                 {
                     type: "icon",
@@ -155,275 +110,132 @@ async function createPass2UPass(studentData, idCardImageUrl) {
                     hex: imageHex
                 }
             ],
-
-            // Barcode configuration
             barcode: {
                 message: studentData.studentId,
                 format: "PKBarcodeFormatCode128",
                 messageEncoding: "iso-8859-1",
                 altText: studentData.studentId
             },
-
-            // Additional settings
             sharingProhibited: false,
             voided: false,
             expirationDate: "2026-12-01T23:59:59Z"
         }, {
             headers: {
                 'x-api-key': PASS2U_API_KEY,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Content-Type': 'application/json'
             }
         });
 
-        console.log("Pass2U pass created successfully, response:", response.data);
-        const passId = response.data.passId;
-        
-        // For iOS devices, we'll use the direct Pass2U URL
+        const passId = passResponse.data.passId;
+        console.log("Pass created successfully with ID:", passId);
+
+        // Get the .pkpass file
+        const downloadResponse = await axios.get(`${PASS2U_BASE_URL}/passes/${passId}/download`, {
+            headers: {
+                'x-api-key': PASS2U_API_KEY,
+                'Accept': 'application/vnd.apple.pkpass'
+            },
+            responseType: 'arraybuffer'
+        });
+
         return {
-            appleWalletUrl: `https://pass2u.net/v1/p2u/${passId}.pkpass`,
-            googleWalletUrl: `https://www.pass2u.net/d/${passId}`,
+            passData: downloadResponse.data,
             passId: passId
         };
     } catch (error) {
-        console.error('Error creating Pass2U pass:', {
-            message: error.message,
-            response: error.response?.data,
-            status: error.response?.status,
-            stack: error.stack
-        });
-        
-        return {
-            appleWalletUrl: null,
-            googleWalletUrl: null,
-            passId: null
-        };
+        console.error('Error creating Pass2U pass:', error);
+        throw error;
     }
 }
 
-// Generate a random 6-digit OTP
-function generateOTP() {
-    return Math.floor(100000 + Math.random() * 900000);
-}
-
-// Send OTP endpoint
-app.post("/send-otp", async (req, res) => {
-    const { email } = req.body;
-    const otp = generateOTP();
-    const expiryTime = Date.now() + 5 * 60 * 1000; // 5 minutes
-
+// Endpoint to serve .pkpass file
+app.get('/download-pass/:passId', async (req, res) => {
     try {
-        // Store OTP with expiry time
-        otpStore.set(email, { otp, expiryTime });
+        const { passId } = req.params;
+        
+        // Download the pass from Pass2U
+        const response = await axios.get(`${PASS2U_BASE_URL}/passes/${passId}/download`, {
+            headers: {
+                'x-api-key': PASS2U_API_KEY,
+                'Accept': 'application/vnd.apple.pkpass'
+            },
+            responseType: 'arraybuffer'
+        });
 
-        const msg = {
-            to: email,
-            from: "spyakure@my.tnstate.edu",
-            subject: "Your TSU Virtual ID OTP",
-            text: `Your OTP is: ${otp}. This will expire in 5 minutes.`,
-            html: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                    <h2>Your TSU Virtual ID OTP</h2>
-                    <p>Your OTP is: <strong>${otp}</strong></p>
-                    <p>This will expire in 5 minutes.</p>
-                    <p>If you did not request this OTP, please ignore this email.</p>
-                </div>
-            `
-        };
+        // Set the correct headers for .pkpass file
+        res.set({
+            'Content-Type': 'application/vnd.apple.pkpass',
+            'Content-Disposition': `attachment; filename=TSU-ID-${passId}.pkpass`,
+            'Content-Length': response.data.length
+        });
 
-        await sgMail.send(msg);
-        res.status(200).json({ message: "OTP sent successfully" });
+        // Send the file
+        res.send(response.data);
     } catch (error) {
-        console.error("Error sending OTP:", error);
-        res.status(500).json({ error: "Failed to send OTP" });
-    }
-});
-
-// Verify OTP endpoint
-app.post("/verify-otp", (req, res) => {
-    const { email, otp } = req.body;
-    const storedData = otpStore.get(email);
-
-    if (!storedData) {
-        return res.status(400).json({ error: "No OTP found" });
-    }
-
-    if (Date.now() > storedData.expiryTime) {
-        otpStore.delete(email);
-        return res.status(400).json({ error: "OTP expired" });
-    }
-
-    if (storedData.otp === parseInt(otp)) {
-        otpStore.delete(email);
-        res.status(200).json({ message: "OTP verified successfully" });
-    } else {
-        res.status(400).json({ error: "Invalid OTP" });
+        console.error('Error downloading pass:', error);
+        res.status(500).json({ error: 'Failed to download pass' });
     }
 });
 
 // Send ID card endpoint
-app.post("/send-id-card", async (req, res) => {
-    const { email, studentData } = req.body;
-
-    if (!email || !studentData) {
-        console.error("Missing required fields:", { email: !!email, studentData: !!studentData });
-        return res.status(400).json({ error: "Missing required fields" });
-    }
-
+app.post('/send-id-card', async (req, res) => {
     try {
-        console.log("Starting ID card creation process for:", email);
-        console.log("Student data received:", JSON.stringify(studentData, null, 2));
-
-        // Read the email template
-        const templatePath = path.join(__dirname, 'templates', 'email-template.html');
-        console.log("Reading template from:", templatePath);
+        const { email, studentData } = req.body;
         
-        try {
-            let template = await fs.readFile(templatePath, 'utf8');
-            console.log("Email template loaded successfully");
-
-            // Generate barcode URL
-            const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(studentData.studentId)}&code=Code128&multiplebarcodes=false&translate-esc=false&unit=mm&dpi=96&imagetype=Gif&rotation=0&color=%23000000&bgcolor=%23ffffff&codepage=&width=200&height=50&fontname=Helvetica&fontsize=10&font=&checksum=false&istextdrawn=false`;
-            console.log("Generated barcode URL:", barcodeUrl);
-
-            // Ensure image URL is valid and accessible
-            let imageUrl = studentData.imageUrl && studentData.imageUrl.trim()
-                ? encodeURI(decodeURIComponent(studentData.imageUrl))
-                : 'https://upload.wikimedia.org/wikipedia/en/thumb/5/53/Tennessee_State_University_seal.svg/300px-Tennessee_State_University_seal.svg.png';
-            console.log("Using image URL:", imageUrl);
-
-            try {
-                console.log("Creating Pass2U pass...");
-                console.log("Pass2U API Key present:", !!process.env.PASS2U_API_KEY);
-                console.log("Pass2U Model ID:", process.env.PASS2U_MODEL_ID);
-                
-                // Create Pass2U pass using our rendered ID card
-                const passData = await createPass2UPass(studentData, imageUrl);
-                console.log("Pass2U pass created successfully:", passData);
-
-                // Replace all placeholders in the template
-                template = template
-                    .replace(/{{name}}/g, studentData.name || '')
-                    .replace(/{{studentId}}/g, studentData.studentId || '')
-                    .replace(/{{major}}/g, studentData.major || '')
-                    .replace(/{{imageUrl}}/g, imageUrl)
-                    .replace(/{{barcodeUrl}}/g, barcodeUrl)
-                    .replace(/{{appleWalletUrl}}/g, passData.appleWalletUrl || '#')
-                    .replace(/{{googleWalletUrl}}/g, passData.googleWalletUrl || '#');
-
-                console.log("Template placeholders replaced successfully");
-                console.log("SendGrid API Key present:", !!process.env.SENDGRID_API_KEY);
-                console.log("Using sender email:", process.env.SENDGRID_FROM_EMAIL);
-
-                // Send email using SendGrid
-                const msg = {
-                    to: email,
-                    from: process.env.SENDGRID_FROM_EMAIL,
-                    subject: "Your TSU Virtual ID Card",
-                    html: template
-                };
-
-                try {
-                    console.log("Sending email via SendGrid...");
-                    await sgMail.send(msg);
-                    console.log("Email sent successfully");
-                    
-                    res.status(200).json({ 
-                        message: "ID card sent successfully",
-                        passData: {
-                            appleWalletUrl: passData.appleWalletUrl,
-                            googleWalletUrl: passData.googleWalletUrl,
-                            passId: passData.passId
-                        }
-                    });
-                } catch (emailError) {
-                    console.error("SendGrid Error Details:", {
-                        error: emailError.message,
-                        code: emailError.code,
-                        response: emailError.response?.body,
-                    });
-                    throw new Error('Failed to send email: ' + (emailError.message || 'Unknown error'));
-                }
-            } catch (pass2uError) {
-                console.error("Pass2U Error:", {
-                    message: pass2uError.message,
-                    response: pass2uError.response?.data,
-                    status: pass2uError.response?.status
-                });
-                throw new Error('Failed to create Pass2U pass: ' + (pass2uError.message || 'Unknown error'));
-            }
-        } catch (templateError) {
-            console.error("Template Error:", {
-                message: templateError.message,
-                stack: templateError.stack
-            });
-            throw new Error('Failed to process email template: ' + templateError.message);
+        if (!email || !studentData) {
+            return res.status(400).json({ error: 'Email and student data are required' });
         }
-    } catch (error) {
-        console.error("Error sending ID card:", {
-            message: error.message,
-            stack: error.stack,
-            details: error.response?.data
+
+        // Create the pass
+        const { passData, passId } = await createPass2UPass(studentData, studentData.imageUrl);
+
+        // Generate pass URLs
+        const passUrls = {
+            appleWalletUrl: `${process.env.BACKEND_URL || 'https://tsu-virtual-id-backend.onrender.com'}/download-pass/${passId}`,
+            googleWalletUrl: `https://www.pass2u.net/d/${passId}`
+        };
+
+        // Read email template
+        const templatePath = path.join(__dirname, 'templates', 'email-template.html');
+        let emailHtml = await fs.readFile(templatePath, 'utf8');
+
+        // Replace placeholders in template
+        emailHtml = emailHtml.replace(/{{name}}/g, studentData.name)
+                            .replace(/{{studentId}}/g, studentData.studentId)
+                            .replace(/{{major}}/g, studentData.major)
+                            .replace(/{{imageUrl}}/g, studentData.imageUrl)
+                            .replace(/{{appleWalletUrl}}/g, passUrls.appleWalletUrl)
+                            .replace(/{{googleWalletUrl}}/g, passUrls.googleWalletUrl);
+
+        // Send email
+        await sgMail.send({
+            to: email,
+            from: process.env.SENDGRID_FROM_EMAIL,
+            subject: 'Your TSU Virtual ID Card',
+            html: emailHtml,
+            attachments: [
+                {
+                    content: passData.toString('base64'),
+                    filename: 'TSU-Student-ID.pkpass',
+                    type: 'application/vnd.apple.pkpass',
+                    disposition: 'attachment'
+                }
+            ]
         });
+
+        res.json({ 
+            message: 'ID card sent successfully',
+            passData: passUrls
+        });
+    } catch (error) {
+        console.error('Error in /send-id-card:', error);
         res.status(500).json({ 
-            error: "Failed to send ID card", 
+            error: 'Failed to send ID card',
             details: error.message
         });
     }
 });
 
-// Direct download endpoint for .pkpass file
-app.get("/download-pass/:passId", async (req, res) => {
-    try {
-        const { passId } = req.params;
-        
-        // Check if we have the pass data stored
-        const passData = passStore.get(passId);
-        if (!passData) {
-            // If not stored, fetch it from Pass2U
-            const downloadUrl = `${PASS2U_BASE_URL}/passes/${passId}/download`;
-            const response = await axios.get(downloadUrl, {
-                headers: {
-                    'x-api-key': PASS2U_API_KEY,
-                    'Accept': 'application/vnd.apple.pkpass'
-                },
-                responseType: 'arraybuffer'
-            });
-            
-            res.set('Content-Type', 'application/vnd.apple.pkpass');
-            res.set('Content-Disposition', 'attachment; filename=TSU-Student-ID.pkpass');
-            return res.send(response.data);
-        }
-        
-        // Send the stored pass data
-        res.set('Content-Type', 'application/vnd.apple.pkpass');
-        res.set('Content-Disposition', 'attachment; filename=TSU-Student-ID.pkpass');
-        res.send(passData);
-        
-        // Clean up stored data
-        passStore.delete(passId);
-    } catch (error) {
-        console.error('Error downloading pass:', error);
-        res.status(500).json({ error: 'Failed to download pass file' });
-    }
-});
-
-// Test endpoint to verify environment variables
-app.get("/test", (req, res) => {
-    const envStatus = {
-        sendgrid_api: !!process.env.SENDGRID_API_KEY,
-        sendgrid_email: !!process.env.SENDGRID_FROM_EMAIL,
-        pass2u_api: !!process.env.PASS2U_API_KEY,
-        pass2u_model: !!process.env.PASS2U_MODEL_ID
-    };
-    
-    res.json({
-        status: "Backend is working!",
-        environment: envStatus
-    });
-});
-
-const PORT = process.env.PORT || 5002;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
 });
