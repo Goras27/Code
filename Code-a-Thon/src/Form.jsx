@@ -106,9 +106,7 @@ const Form = () => {
     const handleSendEmail = async () => {
         setIsLoading(true);
         try {
-            const apiUrl = import.meta.env.MODE === 'production' 
-                ? 'https://virtual-id-backend.onrender.com' 
-                : 'http://localhost:5002';
+            const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5002';
             const response = await fetch(`${apiUrl}/send-id-card`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -124,7 +122,25 @@ const Form = () => {
                 throw new Error(data.error || 'Failed to send ID card to email');
             }
 
-            alert('ID card has been sent to your email! Check your inbox for the Apple Wallet pass.');
+            // Check if we have wallet pass URLs
+            if (data.passData && (data.passData.appleWalletUrl || data.passData.googleWalletUrl)) {
+                // Detect device type
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                const isAndroid = /Android/.test(navigator.userAgent);
+
+                // Show appropriate message based on device
+                if (isIOS && data.passData.appleWalletUrl) {
+                    alert('ID card has been sent to your email! Click the Apple Wallet button in the email to add your ID to your wallet.');
+                    window.location.href = data.passData.appleWalletUrl;
+                } else if (isAndroid && data.passData.googleWalletUrl) {
+                    alert('ID card has been sent to your email! Click the Google Wallet button in the email to add your ID to your wallet.');
+                    window.location.href = data.passData.googleWalletUrl;
+                } else {
+                    alert('ID card has been sent to your email! Check your inbox for wallet pass options.');
+                }
+            } else {
+                alert('ID card has been sent to your email!');
+            }
         } catch (error) {
             console.error('Error sending ID card:', error);
             setError(error.message || 'Failed to send ID card to email. Please try again.');

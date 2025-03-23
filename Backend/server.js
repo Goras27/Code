@@ -7,8 +7,17 @@ const axios = require('axios');
 require("dotenv").config();
 
 const app = express();
+
+// CORS configuration
+const corsOptions = {
+    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    methods: ['GET', 'POST'],
+    credentials: true,
+    optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
-app.use(cors());
 
 // In-memory storage for OTPs
 const otpStore = new Map();
