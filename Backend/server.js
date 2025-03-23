@@ -13,12 +13,7 @@ const port = process.env.PORT || 5002;
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // CORS configuration
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  methods: ['GET', 'POST'],
-  credentials: true
-}));
-
+app.use(cors());  // Allow all origins for testing
 app.use(express.json());
 
 // Pass2U API configuration
@@ -35,13 +30,20 @@ function generateOTP() {
 
 // Send OTP endpoint
 app.post('/send-otp', async (req, res) => {
+    console.log('Received /send-otp request:', req.body);
     try {
         const { email } = req.body;
+        if (!email) {
+            console.log('No email provided');
+            return res.status(400).json({ error: 'Email is required' });
+        }
+
         const otp = generateOTP();
         const expiryTime = Date.now() + 5 * 60 * 1000; // 5 minutes
 
         // Store OTP with expiry time
         otpStore.set(email, { otp, expiryTime });
+        console.log('Generated OTP for', email, ':', otp);
 
         // Send OTP email
         await sgMail.send({
@@ -57,32 +59,39 @@ app.post('/send-otp', async (req, res) => {
                 </div>
             `
         });
+        console.log('OTP email sent to', email);
 
         res.json({ message: 'OTP sent successfully' });
     } catch (error) {
-        console.error('Error sending OTP:', error);
+        console.error('Error in /send-otp:', error);
         res.status(500).json({ error: 'Failed to send OTP' });
     }
 });
 
 // Verify OTP endpoint
 app.post('/verify-otp', (req, res) => {
+    console.log('Received /verify-otp request:', req.body);
     const { email, otp } = req.body;
     const storedData = otpStore.get(email);
 
     if (!storedData) {
+        console.log('No OTP found for', email);
         return res.status(400).json({ error: 'No OTP found' });
     }
 
     if (Date.now() > storedData.expiryTime) {
+        console.log('OTP expired for', email);
         otpStore.delete(email);
         return res.status(400).json({ error: 'OTP expired' });
     }
 
+    console.log('Comparing OTP for', email, '- Input:', otp, 'Stored:', storedData.otp);
     if (storedData.otp === parseInt(otp)) {
+        console.log('OTP verified successfully for', email);
         otpStore.delete(email);
         res.json({ message: 'OTP verified successfully' });
     } else {
+        console.log('Invalid OTP for', email);
         res.status(400).json({ error: 'Invalid OTP' });
     }
 });
